@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Bandera de Colombia">
+  <!-- Bandera de Colombia en disco. Proporciones oficiales: amarillo la mitad
+       superior, azul y rojo un cuarto cada uno. En SVG para que se vea nítida
+       en cualquier tamaño (16px de la pestaña o 512px del icono de escritorio). -->
+  <defs>
+    <clipPath id="disco">
+      <circle cx="256" cy="256" r="256" />
+    </clipPath>
+  </defs>
+  <g clip-path="url(#disco)">
+    <rect width="512" height="256" fill="#ffda44" />
+    <rect y="256" width="512" height="128" fill="#0052b4" />
+    <rect y="384" width="512" height="128" fill="#d80027" />
+  </g>
+</svg>
