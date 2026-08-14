@@ -54,16 +54,25 @@ Ver [`.env.example`](.env.example). Nunca commitear valores reales.
 | M1 Núcleo de datos (migraciones, seeds, cifrado) | ✅ |
 | M2 WhatsApp ingress + conversación | ✅ (sandbox; WABA productiva pendiente de Jaime) |
 | M3 Media + IA + confirmación | ✅ |
-| M4 Casos, necesidades y validación | pendiente |
-| M5 Ofertas, matching y asignación | pendiente |
+| M4 Casos, necesidades y validación | 🔨 servicio de dominio escrito, falta router+pruebas |
+| M5 Ofertas, matching y asignación | ✅ |
 | M6 Fulfillment y evidencia | pendiente |
 | M7 Consola de agentes | pendiente |
-| M8 Impact Feed + Transparency Dashboard | pendiente |
+| M8 Impact Feed + Transparency Dashboard | 🔨 feed y dashboard funcionando con datos demo |
 | M9 Trust, antifraude y auditoría | pendiente |
 | M10 Endurecimiento y operación | pendiente |
+
+## Demo con datos de prueba
+
+```bash
+python -m app.seeds && python -m app.seeds.demo   # escenario sintético completo
+```
+
+Guía paso a paso: [`docs/demo-local.md`](docs/demo-local.md).
 
 ## Documentación
 
 - `docs/adr/` — decisiones de arquitectura (desviaciones del alcance v1.0)
 - `docs/easypanel-setup.md` — checklist de despliegue en EasyPanel
-- `docs/waba-setup.md` — guía de creación de la WABA productiva (tras M2)
+- `docs/waba-setup.md` — guía de creación de la WABA productiva
+- `docs/demo-local.md` — levantar la demo con datos de prueba

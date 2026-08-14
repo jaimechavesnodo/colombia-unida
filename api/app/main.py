@@ -45,8 +45,10 @@ def create_app() -> FastAPI:
 
     # Routers de los bounded contexts
     from app.modules.intake.webhook_router import router as webhook_router
+    from app.modules.public_impact.router import router as public_router
 
     app.include_router(webhook_router)
+    app.include_router(public_router)
 
     return app
 
