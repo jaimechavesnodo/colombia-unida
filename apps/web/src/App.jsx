@@ -60,11 +60,7 @@ function Photo({ name, alt, width, height, priority = false, variant = 'wide', c
     <img
       className={className}
       src={card ? `${IMG}/${name}-card.webp` : `${IMG}/${name}-1600.webp`}
-      srcSet={
-        card
-          ? undefined
-          : `${IMG}/${name}-800.webp 800w, ${IMG}/${name}-1600.webp 1600w`
-      }
+      srcSet={card ? undefined : `${IMG}/${name}-800.webp 800w, ${IMG}/${name}-1600.webp 1600w`}
       sizes={card ? undefined : '(max-width: 760px) 100vw, 1180px'}
       width={width}
       height={height}
@@ -115,7 +111,7 @@ function Bars({ rows, accent = false }) {
               />
             </div>
           )}
-          <span className="bar-value sans">{r.suppressed ? '—' : r.display ?? r.value}</span>
+          <span className="bar-value sans">{r.suppressed ? '—' : (r.display ?? r.value)}</span>
         </div>
       ))}
     </div>
@@ -180,8 +176,8 @@ function Dashboard({ impact }) {
         <IconShield />
         <span>
           Cifras derivadas de datos verificados y agregados. Las celdas con menos de{' '}
-          {impact.privacy_threshold ?? 5} casos se suprimen para que no sea posible
-          reidentificar hogares en zonas poco pobladas.
+          {impact.privacy_threshold ?? 5} casos se suprimen para que no sea posible reidentificar
+          hogares en zonas poco pobladas.
         </span>
       </div>
 
@@ -221,8 +217,8 @@ function Dashboard({ impact }) {
         <>
           <h2 className="section-title">Necesidades por horizonte</h2>
           <p className="section-sub sans">
-            Cada necesidad se gestiona por separado, con su propia cantidad y estado: la
-            emergencia se mide en horas, la reconstrucción en meses.
+            Cada necesidad se gestiona por separado, con su propia cantidad y estado: la emergencia
+            se mide en horas, la reconstrucción en meses.
           </p>
           <div className="panel glass">
             <Bars rows={horizons} />
@@ -359,9 +355,9 @@ function Feed({ items, order, setOrder, admin1, setAdmin1, departments }) {
       <div className="notice sans">
         <IconShield />
         <span>
-          Cada caso se publica solo con el consentimiento de la familia y tras revisión del
-          equipo. No mostramos nombres, teléfonos, documentos ni la dirección exacta. Las
-          fotografías son de contexto y no corresponden a los hogares publicados.
+          Cada caso se publica solo con el consentimiento de la familia y tras revisión del equipo.
+          No mostramos nombres, teléfonos, documentos ni la dirección exacta. Las fotografías son de
+          contexto y no corresponden a los hogares publicados.
         </span>
       </div>
 
@@ -423,7 +419,9 @@ export default function App() {
   const [error, setError] = useState(null)
 
   useEffect(() => {
-    fetchImpact().then(setImpact).catch((e) => setError(e.message))
+    fetchImpact()
+      .then(setImpact)
+      .catch((e) => setError(e.message))
   }, [])
 
   useEffect(() => {
@@ -433,9 +431,7 @@ export default function App() {
   }, [order, admin1])
 
   const departments = useMemo(() => {
-    const present = new Set(
-      (feed?.items ?? []).map((i) => i.location?.admin1).filter(Boolean),
-    )
+    const present = new Set((feed?.items ?? []).map((i) => i.location?.admin1).filter(Boolean))
     return [...present].sort()
   }, [feed])
 
@@ -550,15 +546,11 @@ export default function App() {
 
         {!error &&
           tab === 'impact' &&
-          (impact ? (
-            <Dashboard impact={impact} />
-          ) : (
-            <p className="state sans">Cargando cifras…</p>
-          ))}
+          (impact ? <Dashboard impact={impact} /> : <p className="state sans">Cargando cifras…</p>)}
 
         <p className="privacy-note sans">
-          Colombia Unida publica únicamente una proyección segura y auditable de la operación.
-          La identidad, el contacto y la ubicación exacta de las familias permanecen en el plano
+          Colombia Unida publica únicamente una proyección segura y auditable de la operación. La
+          identidad, el contacto y la ubicación exacta de las familias permanecen en el plano
           protegido y no se exponen en esta página. Cada ayuda entregada queda registrada con
           responsable, hora y evidencia.
         </p>

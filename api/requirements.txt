@@ -13,3 +13,4 @@ geoalchemy2>=0.15
 anthropic>=0.40
 boto3>=1.34
 pillow>=10
+email-validator>=2.1

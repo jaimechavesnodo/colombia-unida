@@ -460,3 +460,47 @@ def test_api_cancel_requires_supervisor_and_compensates(client, factory):
     assert r.status_code == 409
     assert r.json()["type"].endswith("invalid-state-transition")
     s.close()
+
+
+def test_api_reject_match_is_terminal_and_moves_no_quantity(client, factory):
+    """MATCH-03: rechazar descarta la propuesta sin tocar inventario."""
+    from app.core.auth import issue_token
+    from app.modules.identity.models import RoleCode
+    from app.modules.supply import matching
+
+    s = factory()
+    agent = _mk_user(s, RoleCode.AGENT)
+    _case, need = _mk_need(s, qty=10)
+    offer, item = _mk_offer(s, qty=10)
+    s.commit()
+    match = matching.generate_matches(s, need=need, offer=offer)[0]
+    s.commit()
+    h = {"Authorization": f"Bearer {issue_token(agent)}"}
+
+    # El motivo es obligatorio: sin él no hay trazabilidad de la decisión.
+    r = client.post(f"/v1/matches/{match.id}:reject", json={"reason": "no"}, headers=h)
+    assert r.status_code == 422
+
+    r = client.post(
+        f"/v1/matches/{match.id}:reject",
+        json={"reason": "la familia ya recibió este ítem por otra vía"},
+        headers=h,
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "REJECTED"
+
+    # Rechazar no reserva ni cubre nada (el ítem nace sin reserva: None).
+    s.refresh(item), s.refresh(need)
+    assert (item.reserved_qty or Decimal(0)) == Decimal(0)
+    assert (need.covered_qty or Decimal(0)) == Decimal(0)
+
+    # REJECTED es terminal: no se puede reservar sobre un match descartado
+    # ni rechazarlo de nuevo.
+    r = client.post("/v1/allocations", json={"match_id": str(match.id), "quantity": 2}, headers=h)
+    assert r.status_code == 409
+    r = client.post(
+        f"/v1/matches/{match.id}:reject", json={"reason": "otro motivo válido"}, headers=h
+    )
+    assert r.status_code == 409
+    assert r.json()["type"].endswith("invalid-state-transition")
+    s.close()

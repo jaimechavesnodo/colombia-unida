@@ -45,6 +45,7 @@ EVENT_ALLOCATION_RESERVED = "allocation.reserved"
 EVENT_ALLOCATION_EXPIRED = "allocation.expired"
 EVENT_ALLOCATION_CANCELLED = "allocation.cancelled"
 EVENT_NEED_COVERAGE_CHANGED = "need.coverage_changed"
+EVENT_MATCH_REJECTED = "match.rejected"
 
 ZERO = Decimal(0)
 
@@ -239,6 +240,16 @@ def reserve_allocation(
     qty = _dec(quantity)
     if qty <= 0:
         raise QuantityUnavailable(available=ZERO)
+    # Se valida el estado del match antes de tocar cantidades: REJECTED,
+    # EXPIRED y SUPERSEDED son terminales y una propuesta ya descartada no
+    # puede mover inventario. APPROVED sí admite reservas sucesivas
+    # (asignación parcial repetida sobre el mismo match).
+    if match.status not in (
+        MatchStatus.PROPOSED,
+        MatchStatus.REVIEW_REQUIRED,
+        MatchStatus.APPROVED,
+    ):
+        raise InvalidTransition("match", match.status, MatchStatus.APPROVED)
     now = utcnow()
     req_hash = _request_hash(match.id, qty)
 
@@ -413,3 +424,34 @@ def cancel_allocation(
         },
     )
     return allocation
+
+
+def reject_match(
+    session: Session,
+    match: Match,
+    actor_user_id,
+    reason: str,
+) -> Match:
+    """Descarta una propuesta de matching sin tocar cantidades.
+
+    Rechazar no reserva ni libera nada: el match propuesto todavía no
+    había movido inventario. Queda el motivo en el evento para que la
+    decisión humana sea auditable (§12.1) y el match no se vuelva a
+    proponer, porque REJECTED es terminal.
+    """
+    assert_transition("match", match.status, MatchStatus.REJECTED)
+    match.status = MatchStatus.REJECTED
+    publish(
+        session,
+        event_type=EVENT_MATCH_REJECTED,
+        aggregate_type="match",
+        aggregate_id=match.id,
+        payload={
+            "match_id": str(match.id),
+            "need_id": str(match.need_id),
+            "offer_item_id": str(match.offer_item_id),
+            "reason": reason,
+            "actor_user_id": str(actor_user_id) if actor_user_id else None,
+        },
+    )
+    return match

@@ -2,6 +2,12 @@
 .env
 .env.*
 !.env.example
+# Valores reales de despliegue (claves de cifrado, contraseña de la base):
+# se generan en local, se pegan en EasyPanel y se guardan en el vault.
+# Ojo: ".env.*" no cubre "algo.env.local", de ahí estas líneas.
+*.env.local
+deploy/*.local
+secrets.local*
 
 # Python
 __pycache__/

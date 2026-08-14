@@ -44,11 +44,17 @@ def create_app() -> FastAPI:
         return {"status": status, "db": db_ok}
 
     # Routers de los bounded contexts
+    from app.modules.console.router import router as console_router
+    from app.modules.identity.auth_router import router as auth_router
     from app.modules.intake.webhook_router import router as webhook_router
     from app.modules.public_impact.router import router as public_router
+    from app.modules.supply.router import router as supply_router
 
     app.include_router(webhook_router)
     app.include_router(public_router)
+    app.include_router(auth_router)
+    app.include_router(console_router)
+    app.include_router(supply_router)
 
     return app
 

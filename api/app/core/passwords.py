@@ -11,16 +11,22 @@ import hashlib
 import hmac
 import os
 
-N = 2**15  # coste CPU/memoria (~32 MB por verificación)
+N = 2**15  # coste CPU/memoria
 R = 8
 P = 1
 SALT_BYTES = 16
 KEY_LEN = 32
+# OpenSSL topa la memoria de scrypt en 32 MiB por defecto y 128*r*N son
+# exactamente 32 MiB: hay que declarar el límite o falla con
+# "memory limit exceeded".
+MAXMEM = 128 * R * N * 2
 
 
 def hash_password(password: str) -> str:
     salt = os.urandom(SALT_BYTES)
-    key = hashlib.scrypt(password.encode(), salt=salt, n=N, r=R, p=P, dklen=KEY_LEN)
+    key = hashlib.scrypt(
+        password.encode(), salt=salt, n=N, r=R, p=P, dklen=KEY_LEN, maxmem=MAXMEM
+    )
     return "$".join(
         [
             "scrypt",
@@ -47,6 +53,7 @@ def verify_password(password: str, stored: str | None) -> bool:
             r=int(r),
             p=int(p),
             dklen=len(base64.b64decode(key_b64)),
+            maxmem=128 * int(r) * int(n) * 2,
         )
         return hmac.compare_digest(key, base64.b64decode(key_b64))
     except (ValueError, TypeError):

@@ -43,6 +43,10 @@ services:
       S3_ACCESS_KEY: minio_local
       S3_SECRET_KEY: minio_local_secret
       CLAMAV_HOST: clamav
+      # En local se siembra todo al arrancar: migraciones (siempre, vía
+      # entrypoint), catálogo/geografía/roles y el escenario de demostración.
+      RUN_SEEDS: "1"
+      SEED_DEMO: "1"
     ports:
       - "8000:80"
     depends_on:
@@ -52,7 +56,12 @@ services:
   worker:
     build: ./api
     command: python -m app.worker
-    environment: *app_env
+    environment:
+      <<: *app_env
+      # Las semillas las corre solo la API: dos contenedores sembrando a la
+      # vez sobre la misma base es una carrera innecesaria.
+      RUN_SEEDS: "0"
+      SEED_DEMO: "0"
     depends_on:
       db:
         condition: service_healthy

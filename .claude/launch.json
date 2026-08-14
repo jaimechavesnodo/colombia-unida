@@ -7,6 +7,13 @@
       "runtimeArgs": ["--prefix", "apps/web", "run", "dev", "--", "--port", "5199", "--strictPort"],
       "port": 5199,
       "url": "http://localhost:5199"
+    },
+    {
+      "name": "console",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "apps/console", "run", "dev", "--", "--port", "5299", "--strictPort"],
+      "port": 5299,
+      "url": "http://localhost:5299"
     }
   ]
 }

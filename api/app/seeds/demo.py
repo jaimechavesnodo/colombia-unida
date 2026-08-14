@@ -54,6 +54,7 @@ from app.modules.identity.models import (
     LocationSource,
     Person,
     PersonIdentifier,
+    RoleCode,  # noqa: E402 (usado en DEMO_USERS)
 )
 from app.modules.intake.models import (
     Channel,
@@ -223,7 +224,7 @@ def seed_demo(session) -> dict:
     incident = _incident(session)
     channel = _channel(session)
     catalog = _catalog(session)
-    stats = {"cases": 0, "needs": 0, "offers": 0, "allocations": 0}
+    stats = {"cases": 0, "needs": 0, "offers": 0, "allocations": 0, "matches": 0}
 
     reporters = [
         _mk_person(session, rng, f"5730000001{i:02d}") for i in range(10)
@@ -357,6 +358,16 @@ def seed_demo(session) -> dict:
             if cat is None:
                 continue
             qty_final = Decimal(qty * rng.randint(1, 2))
+            # PARTIALLY_COVERED con covered == requested sería una
+            # contradicción: la cobertura parcial va entre 30% y 70%.
+            if need_status == NeedStatus.DELIVERED_VERIFIED:
+                covered = qty_final
+            elif need_status == NeedStatus.PARTIALLY_COVERED:
+                covered = (qty_final * Decimal(rng.randint(3, 7)) / Decimal(10)).quantize(
+                    Decimal("0.1")
+                )
+            else:
+                covered = Decimal(0)
             need = Need(
                 case_id=case.id,
                 catalog_id=cat.id,
@@ -364,13 +375,12 @@ def seed_demo(session) -> dict:
                 status=need_status,
                 requested_qty=qty_final,
                 confirmed_qty=qty_final if need_status != NeedStatus.REPORTED else None,
-                covered_qty=(
-                    qty_final if need_status in (
-                        NeedStatus.PARTIALLY_COVERED, NeedStatus.DELIVERED_VERIFIED
-                    ) else Decimal(0)
-                ),
+                covered_qty=covered,
                 unit_code=cat.unit_code,
                 description_redacted=f"{cat.name_es} para hogar en {muni_name.title()}",
+                # La necesidad nace con el reporte: sin esto la antigüedad de
+                # la cola sale en 0 días y la vista de aging no dice nada.
+                created_at=opened,
             )
             session.add(need)
             demo_needs.append(need)
@@ -417,33 +427,31 @@ def seed_demo(session) -> dict:
         stats["offers"] += 1
 
     # ── Matches y una asignación reservada ────────────────────────────
+    from app.modules.supply.matching import generate_matches
+
     mattress_offer, mattress_item = offers[0]
+    # Motor real de matching: elegibilidad dura + los dos puntajes de §10.2
+    created_matches = []
+    for _offer, _item in offers:
+        created_matches.extend(generate_matches(session, offer=_offer))
+    session.flush()
+    stats["matches"] = len(created_matches)
+
     open_mattress_needs = [
         n for n in demo_needs
         if n.status == NeedStatus.OPEN and n.catalog_id == catalog["SHELTER.MATTRESS"].id
     ]
-    for need in open_mattress_needs[:3]:
-        match = Match(
-            need_id=need.id,
-            offer_id=mattress_offer.id,
-            offer_item_id=mattress_item.id,
-            algorithm_version="demo-v1",
-            eligibility_passed=True,
-            humanitarian_priority_score=Decimal("0.72"),
-            feasibility_score=Decimal("0.81"),
-            final_rank=Decimal("0.76"),
-            explanation_json={"demo": True, "policy": "0.6*priority+0.4*feasibility"},
-            status=MatchStatus.PROPOSED,
-            generated_at=utcnow(),
-        )
-        session.add(match)
-    session.flush()
 
     if open_mattress_needs:
         need = open_mattress_needs[0]
         first_match = session.execute(
             sa.select(Match).where(Match.need_id == need.id).limit(1)
-        ).scalar_one()
+        ).scalar_one_or_none()
+    else:
+        first_match = None
+
+    if first_match is not None:
+        need = session.get(Need, first_match.need_id)
         qty = min(need.requested_qty or Decimal(3), Decimal(6))
         allocation = Allocation(
             incident_id=incident.id,
@@ -590,11 +598,56 @@ def main() -> None:
         else:
             stats = seed_demo(session)
         stats.update(seed_public_projections(session))
+        stats["console_users"] = seed_console_users(session)
         session.commit()
         log_ctx(logger, logging.INFO, "demo data seeded", **stats)
     finally:
         session.close()
 
+
+
+# ── Usuarios de la consola (solo demo) ─────────────────────────────────
+
+DEMO_USERS = [
+    ("supervisor@colombiaunida.demo", "Demo1234!", RoleCode.SUPERVISOR),
+    ("agente@colombiaunida.demo", "Demo1234!", RoleCode.AGENT),
+    ("validador@colombiaunida.demo", "Demo1234!", RoleCode.VALIDATOR),
+]
+
+
+def seed_console_users(session) -> int:
+    """Crea usuarios de demostración con rol asignado.
+
+    ⚠️ Contraseñas conocidas: exclusivo para el entorno de demostración.
+    En piloto/producción los usuarios se crean por invitación con MFA.
+    """
+    from app.core.passwords import hash_password
+    from app.core.security import hmac_index
+    from app.modules.identity.models import Role, User, UserRoleAssignment, UserStatus
+
+    created = 0
+    for email, password, role_code in DEMO_USERS:
+        email_hmac = hmac_index(email)
+        existing = session.execute(
+            sa.select(User).where(User.email_hmac == email_hmac)
+        ).scalar_one_or_none()
+        if existing is not None:
+            continue
+        user = User(
+            email_enc=encrypt_text(email),
+            email_hmac=email_hmac,
+            password_hash=hash_password(password),
+            mfa_enrolled=False,  # demo: sin TOTP para no bloquear la muestra
+            status=UserStatus.ACTIVE,
+        )
+        session.add(user)
+        session.flush()
+        role = session.execute(
+            sa.select(Role).where(Role.code == role_code).order_by(Role.version.desc()).limit(1)
+        ).scalar_one()
+        session.add(UserRoleAssignment(user_id=user.id, role_id=role.id))
+        created += 1
+    return created
 
 if __name__ == "__main__":
     main()

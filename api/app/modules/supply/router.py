@@ -35,6 +35,7 @@ from app.modules.supply.service import (
     UnknownCatalogCode,
     cancel_allocation,
     confirm_offer,
+    reject_match,
     reserve_allocation,
 )
 
@@ -221,6 +222,34 @@ def generate_matches_endpoint(
     }
 
 
+class RejectMatchIn(BaseModel):
+    reason: str = Field(min_length=3, max_length=500)
+
+
+@router.post("/matches/{match_id}:reject")
+def reject_match_endpoint(
+    match_id: uuid.UUID,
+    body: RejectMatchIn,
+    user: User = Depends(_operativos),
+    db: Session = Depends(get_db),
+):
+    """Descarta una propuesta de matching.
+
+    El motivo es obligatorio: sin motivo no queda trazabilidad de por qué
+    el equipo no atendió esa combinación necesidad–oferta.
+    """
+    match = db.get(Match, match_id)
+    if match is None:
+        raise HTTPException(status_code=404, detail="Match no encontrado")
+    try:
+        reject_match(db, match, user.id, body.reason)
+        db.commit()
+    except InvalidTransition as exc:
+        db.rollback()
+        return _problem(409, "invalid-state-transition", "Transición inválida", str(exc))
+    return {"id": str(match.id), "status": match.status.value}
+
+
 # ── Asignaciones ───────────────────────────────────────────────────────
 
 
@@ -268,6 +297,14 @@ def create_allocation(
             "Cantidad ya no disponible",
             f"La cantidad solicitada excede la libre; disponible: {exc.available}",
             available=float(exc.available),
+        )
+    except InvalidTransition as exc:
+        db.rollback()
+        return _problem(
+            409,
+            "invalid-state-transition",
+            "Propuesta no reservable",
+            str(exc),
         )
     except IdempotencyConflict:
         db.rollback()

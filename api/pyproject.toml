@@ -11,6 +11,7 @@ ignore = ["S101"]  # asserts permitidos en tests
 "tests/*" = ["S105", "S106"]
 # B008: Depends()/Query() en defaults es el patrón idiomático de FastAPI
 "app/**/router.py" = ["B008"]
+"app/**/auth_router.py" = ["B008", "S105"]
 "app/**/webhook_router.py" = ["B008"]
 "app/core/auth.py" = ["B008"]
 
