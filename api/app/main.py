@@ -18,17 +18,24 @@ logger = logging.getLogger("app")
 # rastro cuando el hosting no expone los logs, y entonces un despliegue roto
 # es indistinguible de uno que todavía está construyéndose.
 STARTUP_ERROR_FILE = pathlib.Path("/tmp/colombia-unida-startup-error.txt")  # noqa: S108
+# Avisos que no impiden servir: por ejemplo, semillas que fallaron. El esquema
+# está bien, así que la API funciona; solo faltan datos.
+STARTUP_WARNING_FILE = pathlib.Path("/tmp/colombia-unida-startup-warning.txt")  # noqa: S108
 
 # Rutas que siguen respondiendo en modo degradado: son las que sirven para
 # diagnosticar. Todo lo demás devuelve 503 sin tocar la base.
 DIAGNOSTIC_PATHS = ("/health", "/ready", "/docs", "/openapi.json")
 
 
-def _startup_error() -> str | None:
+def _read_note(path: pathlib.Path) -> str | None:
     try:
-        return STARTUP_ERROR_FILE.read_text().strip() or None
+        return path.read_text().strip() or None
     except OSError:
         return None
+
+
+def _startup_error() -> str | None:
+    return _read_note(STARTUP_ERROR_FILE)
 
 
 def create_app() -> FastAPI:
@@ -90,9 +97,13 @@ def create_app() -> FastAPI:
         db_ok = check_db_ready()
         status = "ok" if db_ok else "degraded"
         log_ctx(logger, logging.INFO if db_ok else logging.WARNING, "readiness", db=db_ok)
-        return JSONResponse(
-            status_code=200 if db_ok else 503, content={"status": status, "db": db_ok}
-        )
+        body: dict = {"status": status, "db": db_ok}
+        # Un aviso no impide servir, pero tiene que verse: si las semillas
+        # fallaron, la demo aparecerá vacía y conviene saber por qué.
+        warning = _read_note(STARTUP_WARNING_FILE)
+        if warning:
+            body["warnings"] = warning.splitlines()
+        return JSONResponse(status_code=200 if db_ok else 503, content=body)
 
     # Routers de los bounded contexts
     from app.modules.console.router import router as console_router

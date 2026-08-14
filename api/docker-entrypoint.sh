@@ -50,22 +50,43 @@ if [ ! -f "$ERR_FILE" ]; then
   fi
 fi
 
+# Las semillas son best-effort, a diferencia de las migraciones: si fallan, el
+# esquema sigue siendo correcto y la API puede servir — solo faltarían datos.
+# Tumbar el servicio por un problema al sembrar sería desproporcionado. El
+# motivo queda en un archivo de avisos que /ready reporta sin marcar el
+# servicio como no listo.
+WARN_FILE=/tmp/colombia-unida-startup-warning.txt
+rm -f "$WARN_FILE"
+
+avisar() {
+  echo "$1" | tee -a "$WARN_FILE" >&2
+}
+
+sembrar() {
+  etiqueta="$1"
+  shift
+  echo "[entrypoint] $etiqueta…"
+  if ! salida=$("$@" 2>&1); then
+    avisar "$etiqueta falló: $(printf '%s' "$salida" | tail -n 2)"
+  else
+    printf '%s\n' "$salida"
+  fi
+}
+
 # Semillas base (roles, catálogo de necesidades, DIVIPOLA, incidente). Son
 # idempotentes, así que correrlas en cada arranque no duplica nada; se dejan
 # detrás de una bandera para que un despliegue no toque datos sin querer.
-if [ "${RUN_SEEDS:-0}" = "1" ]; then
-  echo "[entrypoint] semillas base…"
-  python -m app.seeds
+if [ "${RUN_SEEDS:-0}" = "1" ] && [ ! -f "$ERR_FILE" ]; then
+  sembrar "semillas base" python -m app.seeds
 fi
 
 # Datos sintéticos de demostración. NUNCA en un entorno con datos reales de
 # un incidente activo: crea personas, casos y usuarios de prueba.
-if [ "${SEED_DEMO:-0}" = "1" ]; then
+if [ "${SEED_DEMO:-0}" = "1" ] && [ ! -f "$ERR_FILE" ]; then
   if [ "${APP_ENV:-local}" = "production" ]; then
     echo "[entrypoint] SEED_DEMO ignorado: APP_ENV=production" >&2
   else
-    echo "[entrypoint] datos de demostración…"
-    python -m app.seeds.demo
+    sembrar "datos de demostración" python -m app.seeds.demo
   fi
 fi
 
