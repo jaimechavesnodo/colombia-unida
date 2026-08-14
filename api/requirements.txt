@@ -10,3 +10,6 @@ uuid6>=2024.1.12
 cryptography>=43
 python-multipart>=0.0.9
 geoalchemy2>=0.15
+anthropic>=0.40
+boto3>=1.34
+pillow>=10

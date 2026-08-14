@@ -33,9 +33,13 @@ def _register_handlers() -> None:
     Se amplía por milestone (IA, matching, analytics, retención,
     anclas de auditoría).
     """
+    from app.modules.intake import ai_service, confirmation_service, media_service
     from app.modules.intake import service as intake_service
 
     intake_service.register()
+    media_service.register()
+    ai_service.register()
+    confirmation_service.register()
 
 
 def main() -> None:

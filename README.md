@@ -53,7 +53,7 @@ Ver [`.env.example`](.env.example). Nunca commitear valores reales.
 | M0 Fundación (repo, skeleton, CI, EasyPanel) | ✅ |
 | M1 Núcleo de datos (migraciones, seeds, cifrado) | ✅ |
 | M2 WhatsApp ingress + conversación | ✅ (sandbox; WABA productiva pendiente de Jaime) |
-| M3 Media + IA + confirmación | pendiente |
+| M3 Media + IA + confirmación | ✅ |
 | M4 Casos, necesidades y validación | pendiente |
 | M5 Ofertas, matching y asignación | pendiente |
 | M6 Fulfillment y evidencia | pendiente |

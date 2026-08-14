@@ -384,6 +384,13 @@ def handle_message(
 
     flow = state.get("flow", "NEW")
 
+    if flow == "AWAIT_AI_CONFIRM":
+        from app.modules.intake.confirmation_service import handle_confirmation_reply
+
+        reply_text = handle_confirmation_reply(session, conversation, person_id, message, text)
+        result.replies.append(Reply(prompt_code="AI_CONFIRM_REPLY_V1", text=reply_text))
+        return result
+
     if flow in {"NEW", "IDLE_SUBMITTED"}:
         result.replies.append(_reply("WELCOME_V1"))
         state["flow"] = "AWAIT_INTENT"

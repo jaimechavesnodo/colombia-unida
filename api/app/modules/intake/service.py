@@ -15,7 +15,7 @@ from app.core.config import get_settings
 from app.core.ids import new_id
 from app.core.logging import log_ctx
 from app.core.model_base import utcnow
-from app.core.outbox import OutboxEvent, register_handler
+from app.core.outbox import OutboxEvent, publish, register_handler
 from app.core.security import decrypt_json, encrypt_text, phone_hmac
 from app.integrations.meta_whatsapp.client import GraphClient
 from app.integrations.meta_whatsapp.parser import InboundMessage, parse_webhook
@@ -161,15 +161,21 @@ def _insert_inbound_message(
         return None
     row = session.get(Message, inserted)
     if msg.media_id:
-        session.add(
-            MediaAsset(
-                message_id=row.id,
-                bucket_class=StorageClassification.QUARANTINE,
-                object_uri=f"meta-media://{msg.media_id}",  # M3 descarga y reemplaza
-                mime_type=msg.media_mime_type,
-                malware_status=MalwareStatus.PENDING,
-                exif_removed=False,
-            )
+        asset = MediaAsset(
+            message_id=row.id,
+            bucket_class=StorageClassification.QUARANTINE,
+            object_uri=f"meta-media://{msg.media_id}",  # media_service descarga y reemplaza
+            mime_type=msg.media_mime_type,
+            malware_status=MalwareStatus.PENDING,
+            exif_removed=False,
+        )
+        session.add(asset)
+        session.flush()
+        publish(
+            session,
+            event_type="media.received",
+            aggregate_type="media_asset",
+            aggregate_id=asset.id,
         )
     return row
 
