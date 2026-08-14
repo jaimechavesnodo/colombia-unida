@@ -13,6 +13,15 @@
 # caído y visible a una API sirviendo contra un esquema equivocado.
 set -e
 
+# Aprovisionamiento de la base: crea rol, base y PostGIS si hace falta. Solo
+# actúa si DB_BOOTSTRAP_URL está definida (usuario con permiso para crear
+# bases). Necesario cuando la instancia de PostgreSQL es compartida y no está
+# expuesta fuera de la red de Docker.
+if [ -n "${DB_BOOTSTRAP_URL:-}" ]; then
+  echo "[entrypoint] aprovisionando base…"
+  python -m app.bootstrap_db
+fi
+
 echo "[entrypoint] aplicando migraciones…"
 alembic upgrade head
 
