@@ -10,11 +10,28 @@ copiar y pegar en EasyPanel; guarda una copia en el vault de NODO. Si se
 pierden `APP_ENCRYPTION_KEY` y `APP_HMAC_KEY`, los campos cifrados de la base
 quedan ilegibles y no hay manera de recuperarlos.
 
-## Para esta primera versión bastan 4 servicios
+## Para esta primera versión bastan 3 servicios
 
-`db`, `api`, `worker` y `web`. **MinIO y ClamAV no hacen falta todavía**: solo
-entran en juego cuando llegue media por WhatsApp, y eso depende de la WABA
-productiva (ver `waba-setup.md`). La API arranca sin ellos.
+`api`, `worker` y `web`.
+
+- **La base de datos no es un servicio de EasyPanel**: se usa el PostgreSQL que
+  ya corre en el VPS de Hostinger. Antes de crear los servicios hay que
+  aprovisionarla con `deploy/provision_db.sh` — ver `base-de-datos-vps.md`.
+- **MinIO y ClamAV no hacen falta todavía**: solo entran en juego cuando llegue
+  media por WhatsApp, y eso depende de la WABA productiva (ver
+  `waba-setup.md`). La API arranca sin ellos.
+
+## 0. Base de datos (antes de tocar el panel)
+
+```bash
+export ADMIN_URL='postgresql://postgres:CLAVE@HOST:5432/postgres'
+export APP_PASSWORD='clave-para-el-rol-colombia_unida'
+SEED_DEMO=1 ./deploy/provision_db.sh
+```
+
+Al terminar imprime el `DATABASE_URL` que va en `api` y `worker`. Ese valor
+reemplaza el que trae `deploy/easypanel.env.local`, que apunta a un servicio
+`db` que ya no existe.
 
 ## 1. Crear proyecto
 
@@ -22,39 +39,30 @@ productiva (ver `waba-setup.md`). La API arranca sin ellos.
 
 ## 2. Servicios
 
-### 2.1 `db` (Servicio → Imagen Docker)
-
-- Imagen: `postgis/postgis:16-3.4`
-- Entorno: las tres variables `POSTGRES_*` del archivo generado
-- Almacenamiento: volumen → `/var/lib/postgresql/data`
-- Sin dominio público
-
-No hay que crear la extensión PostGIS a mano: la primera migración ejecuta
-`CREATE EXTENSION IF NOT EXISTS postgis`.
-
-### 2.2 `api` (Servicio → App → GitHub)
+### 2.1 `api` (Servicio → App → GitHub)
 
 - Propietario: `jaimechavesnodo` · Repo: `colombia-unida` · Rama: `main`
 - Ruta de compilación: `/api` · Compilación: **Dockerfile**
-- Entorno: todo el bloque «api y worker» del archivo generado,
-  **con `RUN_SEEDS=1` y `SEED_DEMO=1`** en el primer despliegue
+- Entorno: todo el bloque «api y worker» del archivo generado, con el
+  `DATABASE_URL` que imprimió `provision_db.sh`, y **`RUN_SEEDS=0` /
+  `SEED_DEMO=0`** (el script ya sembró; dejarlos en `1` repite el trabajo en
+  cada arranque)
 - Sin dominio público directo (entra por el nginx de `web`)
 - Avanzado: réplicas `1`
 
-El contenedor aplica `alembic upgrade head` al arrancar y, con esas dos
-banderas, siembra el catálogo, la geografía DANE, los roles y el escenario de
-demostración. Si la migración falla, el contenedor no arranca — es a propósito:
-mejor un servicio caído y visible que una API sirviendo contra un esquema
-equivocado.
+El contenedor aplica `alembic upgrade head` al arrancar, así que un despliegue
+con migraciones nuevas se actualiza solo. Si la migración falla, el contenedor
+no arranca — es a propósito: mejor un servicio caído y visible que una API
+sirviendo contra un esquema equivocado.
 
-### 2.3 `worker` (Servicio → App → GitHub)
+### 2.2 `worker` (Servicio → App → GitHub)
 
 - Igual que `api` (mismo repo, misma ruta `/api`, mismo Dockerfile)
 - **Comando de arranque:** `python -m app.worker`
-- Mismas variables que `api` pero con `RUN_SEEDS=0` y `SEED_DEMO=0`
+- Mismas variables que `api`, con `RUN_SEEDS=0` y `SEED_DEMO=0`
   (que dos contenedores siembren a la vez es una carrera innecesaria)
 
-### 2.4 `web` (Servicio → App → GitHub)
+### 2.3 `web` (Servicio → App → GitHub)
 
 - Propietario: `jaimechavesnodo` · Repo: `colombia-unida` · Rama: `main`
 - Ruta de compilación: `/` · Compilación: **Dockerfile** →
@@ -94,8 +102,11 @@ curl -s https://nodo.host/colombia-unida/api/public/v1/impact | head -c 300
 
 ## 5. Después del primer despliegue
 
-- Poner `RUN_SEEDS=0` y `SEED_DEMO=0` en `api` **antes** de que entren datos
-  reales de un incidente activo. El seed de demostración crea personas, casos y
-  usuarios sintéticos; no debe correr junto a datos reales.
+- Antes de que entren datos reales de un incidente activo: confirmar que
+  `RUN_SEEDS` y `SEED_DEMO` estén en `0`, y borrar el escenario sintético. El
+  seed de demostración crea personas, casos y usuarios de prueba; no debe
+  convivir con datos reales.
 - Cambiar la contraseña de los tres usuarios de demostración, o desactivarlos.
-- Programar el respaldo diario de la base (`pg_dump`) — pendiente de M10.
+- Programar el respaldo diario (`pg_dump`) en la instancia del VPS y guardar
+  aparte las claves de cifrado — ver `base-de-datos-vps.md`. Un respaldo sin
+  `APP_ENCRYPTION_KEY` deja los campos sensibles ilegibles.

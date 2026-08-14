@@ -15,7 +15,7 @@ con datos reales de un incidente activo.
 import logging
 import random
 from datetime import timedelta
-from decimal import Decimal
+from decimal import ROUND_DOWN, Decimal
 
 import sqlalchemy as sa
 
@@ -173,6 +173,11 @@ def _catalog(session) -> dict[str, NeedCatalog]:
         sa.select(NeedCatalog).where(NeedCatalog.active.is_(True))
     ).scalars().all()
     return {c.code: c for c in rows}
+
+
+# Unidades que admiten fracción. El resto son contables: no existe media
+# reparación de techo ni 1,2 kits de aseo.
+DIVISIBLE_UNITS = {"L", "M2"}
 
 
 def _mk_person(session, rng, phone: str) -> Person:
@@ -358,14 +363,25 @@ def seed_demo(session) -> dict:
             if cat is None:
                 continue
             qty_final = Decimal(qty * rng.randint(1, 2))
+            divisible = cat.unit_code in DIVISIBLE_UNITS
+            # Una cantidad de 1 en unidad contable no admite cobertura
+            # parcial: no existe media reparación de techo. Se pide 2 para
+            # que "cubierta en parte" pueda significar 1 de 2.
+            if need_status == NeedStatus.PARTIALLY_COVERED and not divisible and qty_final < 2:
+                qty_final = Decimal(2)
+
             # PARTIALLY_COVERED con covered == requested sería una
             # contradicción: la cobertura parcial va entre 30% y 70%.
             if need_status == NeedStatus.DELIVERED_VERIFIED:
                 covered = qty_final
             elif need_status == NeedStatus.PARTIALLY_COVERED:
-                covered = (qty_final * Decimal(rng.randint(3, 7)) / Decimal(10)).quantize(
-                    Decimal("0.1")
-                )
+                covered = qty_final * Decimal(rng.randint(3, 7)) / Decimal(10)
+                if divisible:
+                    covered = covered.quantize(Decimal("0.1"))
+                else:
+                    # Entre 1 y qty-1: siempre algo entregado y algo faltando.
+                    entero = covered.to_integral_value(rounding=ROUND_DOWN)
+                    covered = min(max(entero, Decimal(1)), qty_final - 1)
             else:
                 covered = Decimal(0)
             need = Need(

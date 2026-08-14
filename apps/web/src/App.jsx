@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
-import { fetchFeed, fetchImpact } from './api.js'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { fetchCase, fetchFeed, fetchHelpOptions, fetchImpact, submitHelpOffer } from './api.js'
 import {
   IconArrow,
   IconCheck,
@@ -47,7 +47,20 @@ const CATALOG_LABELS = {
   'PSYCHOSOCIAL.SUPPORT': 'Apoyo psicosocial',
 }
 
+// unit_code viene en clave técnica; en la página va en español y en plural,
+// que es como se lee al lado de una cantidad ("5 unidades").
+const UNIT_ES = {
+  UNIT: 'unidades',
+  KIT: 'kits',
+  SERVICE: 'servicios',
+  TRIP: 'viajes',
+  PERSON_DAY: 'días-persona',
+  L: 'litros',
+  M2: 'm²',
+}
+
 const label = (code) => CATALOG_LABELS[code] ?? code
+const unitLabel = (code) => UNIT_ES[code] ?? (code ?? '').toLowerCase()
 const titleCase = (s) =>
   (s ?? '').toLowerCase().replace(/(^|\s|-)([a-záéíóúñ])/g, (_, p, c) => p + c.toUpperCase())
 
@@ -67,7 +80,9 @@ function Photo({ name, alt, width, height, priority = false, variant = 'wide', c
       alt={alt}
       loading={priority ? 'eager' : 'lazy'}
       decoding="async"
-      fetchPriority={priority ? 'high' : 'auto'}
+      // En minúscula: React 18 no reconoce fetchPriority en camelCase y lo
+      // avisa por consola en cada render.
+      fetchpriority={priority ? 'high' : 'auto'}
     />
   )
 }
@@ -273,7 +288,400 @@ function Dashboard({ impact }) {
   )
 }
 
+/** Diálogo modal accesible.
+ *
+ *  Usa <dialog> nativo por showModal(): trae foco atrapado, cierre con Esc y
+ *  el resto de la página inerte sin que haya que reimplementarlo a mano.
+ */
+function Modal({ open, onClose, labelledBy, children }) {
+  const ref = useRef(null)
+
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    if (open && !el.open) el.showModal()
+    if (!open && el.open) el.close()
+  }, [open])
+
+  if (!open) return null
+  return (
+    <dialog
+      className="modal glass"
+      ref={ref}
+      aria-labelledby={labelledBy}
+      // Esc dispara 'cancel' y el click en el backdrop dispara 'close':
+      // los dos tienen que avisarle al padre, o el estado queda desfasado
+      // y el diálogo no vuelve a abrir.
+      onCancel={(e) => {
+        e.preventDefault()
+        onClose()
+      }}
+      onClose={onClose}
+      onClick={(e) => {
+        if (e.target === ref.current) onClose()
+      }}
+    >
+      <button className="modal-close" type="button" onClick={onClose} aria-label="Cerrar">
+        ✕
+      </button>
+      {children}
+    </dialog>
+  )
+}
+
+/** «Ver el avance»: la historia pública completa del caso. */
+function ProgressDialog({ slug, open, onClose }) {
+  const [data, setData] = useState(null)
+  const [error, setError] = useState(null)
+
+  useEffect(() => {
+    if (!open) return
+    setData(null)
+    setError(null)
+    fetchCase(slug)
+      .then(setData)
+      .catch(() => setError('No pudimos cargar el avance de este caso.'))
+  }, [open, slug])
+
+  const pct = Math.round(data?.progress_percent ?? 0)
+
+  return (
+    <Modal open={open} onClose={onClose} labelledBy="avance-titulo">
+      <p className="modal-eyebrow sans">Avance del caso</p>
+      <h2 className="modal-title" id="avance-titulo">
+        {data?.title ?? 'Cargando…'}
+      </h2>
+
+      {error && <p className="form-error sans">{error}</p>}
+
+      {data && (
+        <>
+          <p className="modal-lede sans">{data.summary}</p>
+
+          <div className="modal-facts sans">
+            <div>
+              <dt>Ubicación</dt>
+              <dd>
+                {[data.location?.admin2, data.location?.admin1]
+                  .filter(Boolean)
+                  .map(titleCase)
+                  .join(' · ') || 'Por confirmar'}
+              </dd>
+            </div>
+            <div>
+              <dt>Hogar</dt>
+              <dd>
+                {data.household_size_band
+                  ? `${data.household_size_band} personas`
+                  : 'Por confirmar'}
+              </dd>
+            </div>
+            <div>
+              <dt>Cobertura</dt>
+              <dd>{pct}%</dd>
+            </div>
+          </div>
+
+          <div
+            className="progress-track"
+            role="img"
+            aria-label={`Cobertura de la necesidad: ${pct} por ciento`}
+          >
+            <div
+              className={`progress-fill${pct < 34 ? ' low' : ''}`}
+              style={{ width: `${Math.max(pct, 3)}%` }}
+            />
+          </div>
+
+          <h3 className="modal-h3 sans">Lo que ha pasado</h3>
+          {/* La API entrega lo más reciente primero (orden de feed); aquí se
+              lee como relato, así que va en orden cronológico. */}
+          {data.updates?.length ? (
+            <ol className="timeline-pub sans">
+              {[...data.updates].reverse().map((u, i) => (
+                <li key={i}>
+                  {u.type === 'DELIVERY' ? <IconCheck /> : <IconDot />}
+                  <div>
+                    <strong>{u.title}</strong>
+                    {u.body && <p>{u.body}</p>}
+                    {u.occurred_on && <span className="muted">{u.occurred_on}</span>}
+                  </div>
+                </li>
+              ))}
+            </ol>
+          ) : (
+            <p className="modal-lede sans">Todavía no hay actualizaciones publicadas.</p>
+          )}
+
+          <p className="modal-note sans">
+            <IconShield />
+            <span>
+              Este avance solo muestra lo que la familia autorizó publicar. No incluye nombres,
+              teléfonos, documentos ni la dirección exacta.
+            </span>
+          </p>
+        </>
+      )}
+    </Modal>
+  )
+}
+
+const OFFER_TYPES = [
+  { value: 'IN_KIND', label: 'Cosas que puedo entregar' },
+  { value: 'MONEY', label: 'Dinero' },
+  { value: 'TRANSPORT', label: 'Transporte' },
+  { value: 'VOLUNTEERING', label: 'Mi tiempo como voluntario' },
+  { value: 'SERVICE', label: 'Un servicio profesional' },
+]
+
+/** «Ayudar a este caso»: formulario de ofrecimiento. */
+function HelpDialog({ slug, caseTitle, open, onClose }) {
+  const [options, setOptions] = useState([])
+  const [form, setForm] = useState({
+    offer_type: 'IN_KIND',
+    catalog_code: '',
+    quantity: '',
+    amount_cop: '',
+    contact_name: '',
+    contact_phone: '',
+    contact_email: '',
+    message: '',
+    consent_contact: false,
+  })
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState(null)
+  const [done, setDone] = useState(null)
+
+  const set = (k) => (e) =>
+    setForm((f) => ({
+      ...f,
+      [k]: e.target.type === 'checkbox' ? e.target.checked : e.target.value,
+    }))
+
+  useEffect(() => {
+    if (!open || !slug) return
+    setDone(null)
+    setError(null)
+    fetchHelpOptions(slug)
+      .then((r) => {
+        setOptions(r.options ?? [])
+        // Preselecciona lo que más falta: es la ayuda más útil y le ahorra
+        // una decisión a quien quiere ayudar rápido.
+        const top = [...(r.options ?? [])].sort((a, b) => b.pending_qty - a.pending_qty)[0]
+        if (top) {
+          setForm((f) => ({
+            ...f,
+            catalog_code: top.catalog_code,
+            quantity: String(top.pending_qty),
+          }))
+        }
+      })
+      .catch(() => setOptions([]))
+  }, [open, slug])
+
+  const isMoney = form.offer_type === 'MONEY'
+  const selected = options.find((o) => o.catalog_code === form.catalog_code)
+
+  async function submit(e) {
+    e.preventDefault()
+    setBusy(true)
+    setError(null)
+    try {
+      const payload = {
+        slug: slug ?? null,
+        offer_type: form.offer_type,
+        contact_name: form.contact_name.trim(),
+        contact_phone: form.contact_phone.trim(),
+        contact_email: form.contact_email.trim() || null,
+        message: form.message.trim() || null,
+        consent_contact: form.consent_contact,
+      }
+      if (isMoney) {
+        payload.amount_cop = Number(form.amount_cop)
+      } else {
+        payload.catalog_code = form.catalog_code || null
+        payload.quantity = Number(form.quantity)
+      }
+      setDone(await submitHelpOffer(payload))
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Modal open={open} onClose={onClose} labelledBy="ayudar-titulo">
+      <p className="modal-eyebrow sans">Ofrecer ayuda</p>
+      <h2 className="modal-title" id="ayudar-titulo">
+        {done ? 'Gracias' : (caseTitle ?? 'Ayudar')}
+      </h2>
+
+      {done ? (
+        <>
+          <p className="modal-lede sans">{done.next_step}</p>
+          <div className="modal-facts sans">
+            <div>
+              <dt>Tu referencia</dt>
+              <dd>
+                <code>{done.reference}</code>
+              </dd>
+            </div>
+          </div>
+          <p className="modal-note sans">
+            <IconShield />
+            <span>
+              Tu ofrecimiento no queda publicado y tus datos de contacto no son públicos: se guardan
+              cifrados y solo los ve el equipo que coordina la entrega.
+            </span>
+          </p>
+          <button className="btn" type="button" onClick={onClose}>
+            Listo
+          </button>
+        </>
+      ) : (
+        <form className="help-form" onSubmit={submit}>
+          {options.length > 0 && (
+            <p className="modal-lede sans">
+              Lo que falta en este caso:{' '}
+              {options
+                .map((o) => `${o.name.toLowerCase()} (${o.pending_qty} ${unitLabel(o.unit)})`)
+                .join(', ')}
+              .
+            </p>
+          )}
+
+          <label className="field sans">
+            <span>¿Cómo quieres ayudar?</span>
+            <select value={form.offer_type} onChange={set('offer_type')}>
+              {OFFER_TYPES.map((t) => (
+                <option key={t.value} value={t.value}>
+                  {t.label}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          {isMoney ? (
+            <label className="field sans">
+              <span>Monto que puedes aportar (COP)</span>
+              <input
+                type="number"
+                min="1000"
+                step="1000"
+                required
+                value={form.amount_cop}
+                onChange={set('amount_cop')}
+                placeholder="200000"
+              />
+              <small>
+                La plataforma no recibe ni administra dinero: queda registrado como promesa y el
+                equipo te explica cómo hacerlo llegar.
+              </small>
+            </label>
+          ) : (
+            <>
+              {options.length > 0 && (
+                <label className="field sans">
+                  <span>¿Qué puedes aportar?</span>
+                  <select value={form.catalog_code} onChange={set('catalog_code')}>
+                    <option value="">Otra cosa (la describo abajo)</option>
+                    {options.map((o) => (
+                      <option key={o.catalog_code} value={o.catalog_code}>
+                        {o.name} — faltan {o.pending_qty} {unitLabel(o.unit)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              <label className="field sans">
+                <span>Cantidad{selected ? ` en ${unitLabel(selected.unit)}` : ''}</span>
+                <input
+                  type="number"
+                  min="0.1"
+                  step="0.1"
+                  required
+                  value={form.quantity}
+                  onChange={set('quantity')}
+                />
+              </label>
+            </>
+          )}
+
+          <label className="field sans">
+            <span>Tu nombre o el de tu organización</span>
+            <input
+              type="text"
+              required
+              minLength={2}
+              value={form.contact_name}
+              onChange={set('contact_name')}
+            />
+          </label>
+
+          <label className="field sans">
+            <span>Teléfono de contacto</span>
+            <input
+              type="tel"
+              required
+              value={form.contact_phone}
+              onChange={set('contact_phone')}
+              placeholder="310 555 1234"
+            />
+          </label>
+
+          <label className="field sans">
+            <span>Correo (opcional)</span>
+            <input type="email" value={form.contact_email} onChange={set('contact_email')} />
+          </label>
+
+          <label className="field sans">
+            <span>¿Algo que debamos saber? (opcional)</span>
+            <textarea
+              rows={2}
+              maxLength={1000}
+              value={form.message}
+              onChange={set('message')}
+              placeholder="Cuándo y dónde podrías entregar"
+            />
+          </label>
+
+          <label className="check sans">
+            <input
+              type="checkbox"
+              checked={form.consent_contact}
+              onChange={set('consent_contact')}
+            />
+            <span>
+              Autorizo que el equipo de Colombia Unida me contacte por este teléfono para coordinar
+              la ayuda.
+            </span>
+          </label>
+
+          {error && (
+            <p className="form-error sans" role="alert">
+              {error}
+            </p>
+          )}
+
+          <button className="btn" type="submit" disabled={busy || !form.consent_contact}>
+            {busy ? 'Enviando…' : 'Enviar ofrecimiento'}
+          </button>
+          <p className="modal-note sans">
+            <IconShield />
+            <span>
+              Nadie te va a pedir datos bancarios ni pagos en esta página. Un ofrecimiento no se
+              publica y lo revisa una persona del equipo antes de coordinarlo.
+            </span>
+          </p>
+        </form>
+      )}
+    </Modal>
+  )
+}
+
 function CaseCard({ item, photo }) {
+  const [dialog, setDialog] = useState(null)
   const pct = Math.round(item.progress_percent ?? 0)
   const complete = pct >= 100
   const place = [item.location?.admin2, item.location?.admin1]
@@ -333,18 +741,46 @@ function CaseCard({ item, photo }) {
           </div>
         </div>
 
-        <button className={`btn${complete ? ' secondary' : ''}`} type="button">
-          {complete ? (
-            <>
-              Ver el avance <IconArrow />
-            </>
-          ) : (
-            <>
-              <IconHeart /> Ayudar a este caso
-            </>
-          )}
-        </button>
+        {/* Un caso cubierto al 100% ya no pide ayuda, muestra qué pasó; el
+            resto abre el formulario. En los dos casos el botón principal
+            abre un diálogo y el secundario deja la otra puerta disponible. */}
+        <div className="case-actions">
+          <button
+            className={`btn${complete ? ' secondary' : ''}`}
+            type="button"
+            onClick={() => setDialog(complete ? 'progress' : 'help')}
+          >
+            {complete ? (
+              <>
+                Ver el avance <IconArrow />
+              </>
+            ) : (
+              <>
+                <IconHeart /> Ayudar a este caso
+              </>
+            )}
+          </button>
+          <button
+            className="link-btn sans"
+            type="button"
+            onClick={() => setDialog(complete ? 'help' : 'progress')}
+          >
+            {complete ? 'Ayudar de todas formas' : 'Ver el avance'}
+          </button>
+        </div>
       </div>
+
+      <ProgressDialog
+        slug={item.slug}
+        open={dialog === 'progress'}
+        onClose={() => setDialog(null)}
+      />
+      <HelpDialog
+        slug={item.slug}
+        caseTitle={item.title}
+        open={dialog === 'help'}
+        onClose={() => setDialog(null)}
+      />
     </article>
   )
 }

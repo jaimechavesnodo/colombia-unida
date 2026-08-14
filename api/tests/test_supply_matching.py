@@ -29,6 +29,14 @@ def _env(migrated_engine):
     s.execute(sa.text("DELETE FROM allocations"))
     s.execute(sa.text("DELETE FROM matches"))
     s.execute(sa.text("DELETE FROM resource_offer_items"))
+    # Los detalles por tipo cuelgan de resource_offers con FK: si quedan filas
+    # aquí, el DELETE de abajo falla por violación de llave foránea. Pasó
+    # cuando las pruebas del formulario público empezaron a crear ofertas de
+    # dinero en la misma base.
+    s.execute(sa.text("DELETE FROM money_offer_details"))
+    s.execute(sa.text("DELETE FROM service_offer_details"))
+    s.execute(sa.text("DELETE FROM transport_offer_details"))
+    s.execute(sa.text("DELETE FROM volunteer_offer_details"))
     s.execute(sa.text("DELETE FROM resource_offers"))
     s.execute(sa.text("DELETE FROM idempotency_keys WHERE scope = 'allocations'"))
     s.commit()

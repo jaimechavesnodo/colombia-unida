@@ -10,13 +10,21 @@ import base64
 import binascii
 import json
 import logging
+from decimal import Decimal
 
 import sqlalchemy as sa
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 from sqlalchemy.orm import Session
 
 from app.core.db import get_db
 from app.core.logging import log_ctx
+from app.core.security import normalize_phone
+from app.modules.public_impact.help_service import (
+    HelpOfferRejected,
+    case_help_options,
+    create_help_offer,
+)
 from app.modules.public_impact.models import (
     ContentReport,
     ContentReportStatus,
@@ -255,3 +263,69 @@ async def report_content(request: Request, db: Session = Depends(get_db)):
     db.commit()
     log_ctx(logger, logging.INFO, "content report received", reason=reason)
     return {"status": "received"}
+
+
+# ── Ofrecer ayuda desde la web ─────────────────────────────────────────
+
+
+@router.get("/cases/{slug}/help-options")
+def get_help_options(slug: str, response: Response, db: Session = Depends(get_db)):
+    """Qué le falta a un caso publicado, para llenar el formulario de ayuda.
+
+    Devuelve categoría, unidad y cantidad pendiente. Nada del hogar: son las
+    mismas categorías que ya describe la historia pública, con el número.
+    """
+    response.headers["Cache-Control"] = CACHE_HEADER
+    return {"options": case_help_options(db, slug)}
+
+
+class HelpOfferIn(BaseModel):
+    """Formulario público de ofrecimiento.
+
+    Los límites de longitud son la primera defensa: este endpoint no pide
+    autenticación, así que no debe aceptar texto ilimitado.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    slug: str | None = Field(default=None, max_length=200)
+    offer_type: str = Field(max_length=20)
+    contact_name: str = Field(min_length=2, max_length=120)
+    contact_phone: str = Field(min_length=7, max_length=20)
+    contact_email: EmailStr | None = None
+    message: str | None = Field(default=None, max_length=1000)
+    catalog_code: str | None = Field(default=None, max_length=64)
+    quantity: Decimal | None = Field(default=None, gt=0, le=Decimal("1000000"))
+    amount_cop: Decimal | None = Field(default=None, gt=0, le=Decimal("10000000000"))
+    consent_contact: bool = False
+
+
+@router.post("/help-offers", status_code=201)
+def submit_help_offer(body: HelpOfferIn, db: Session = Depends(get_db)):
+    """Registra un ofrecimiento de ayuda. Sin autenticación, con consentimiento.
+
+    La oferta queda PENDING_CONFIRMATION: nadie del equipo la da por
+    disponible hasta hablar con quien ofrece.
+    """
+    phone = normalize_phone(body.contact_phone)
+    if len(phone) < 10:
+        raise HTTPException(status_code=422, detail="Teléfono no válido")
+    try:
+        result = create_help_offer(
+            db,
+            slug=body.slug,
+            offer_type=body.offer_type,
+            contact_name=body.contact_name.strip(),
+            contact_phone=phone,
+            contact_email=body.contact_email,
+            message=body.message,
+            catalog_code=body.catalog_code,
+            quantity=body.quantity,
+            amount_cop=body.amount_cop,
+            consent_contact=body.consent_contact,
+        )
+        db.commit()
+    except HelpOfferRejected as exc:
+        db.rollback()
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return result
