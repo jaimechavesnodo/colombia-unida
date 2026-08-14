@@ -1,5 +1,12 @@
 # Base de datos en el PostgreSQL del VPS
 
+> **Estado real (14-ago-2026):** Colombia Unida terminó con **su propio
+> servicio `db`** (`postgis/postgis:17-3.5`) dentro del proyecto de EasyPanel,
+> no en la instancia compartida `nodo-postgres`. Motivo: esa instancia corre
+> `pgvector/pgvector:pg17` y no tiene PostGIS, que el esquema necesita. Ver
+> [ADR-0003](adr/0003-postgres-propio-con-postgis.md). Lo que sigue aplica si
+> algún día se consolida en una instancia compartida.
+
 Colombia Unida usa el PostgreSQL que ya corre en el VPS de Hostinger, en vez de
 levantar un contenedor `db` propio en EasyPanel. Una sola instancia para todos
 los proyectos de NODO significa un solo respaldo, un solo ajuste de memoria y
