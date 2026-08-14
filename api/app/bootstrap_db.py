@@ -67,11 +67,23 @@ def ensure_database(cur, dbname: str, owner: str) -> bool:
     if cur.fetchone():
         return False
     # CREATE DATABASE tampoco admite parámetros ligados ni corre en transacción.
-    cur.execute(
-        sql.SQL("CREATE DATABASE {} OWNER {}").format(
-            sql.Identifier(dbname), sql.Identifier(owner)
-        )
+    crear = sql.SQL("CREATE DATABASE {} OWNER {}").format(
+        sql.Identifier(dbname), sql.Identifier(owner)
     )
+    try:
+        cur.execute(crear)
+    except psycopg.errors.InternalError_ as exc:
+        if "collation version mismatch" not in str(exc):
+            raise
+        # Pasa cuando el volumen de datos lo inicializó una imagen con una
+        # glibc distinta a la que quedó corriendo (p. ej. el servicio se creó
+        # con postgres:17 y después se cambió a postgis/postgis:17-3.5).
+        # CREATE DATABASE copia template1 y se niega si esa metadata no cuadra.
+        # Refrescarla es el remedio que documenta PostgreSQL, y en un clúster
+        # recién creado no hay datos cuyos índices puedan verse afectados.
+        logger.warning("template1 con collation desajustada; se refresca")
+        cur.execute("ALTER DATABASE template1 REFRESH COLLATION VERSION")
+        cur.execute(crear)
     return True
 
 
