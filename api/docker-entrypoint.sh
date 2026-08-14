@@ -13,17 +13,42 @@
 # caído y visible a una API sirviendo contra un esquema equivocado.
 set -e
 
+# Dónde queda el motivo si el arranque no logra dejar la base lista. La API lo
+# lee y responde 503 con ese texto en /ready, rechazando el tráfico de negocio.
+ERR_FILE=/tmp/colombia-unida-startup-error.txt
+rm -f "$ERR_FILE"
+
+# Deja constancia del fallo y arranca igual, en modo degradado. Morir aquí no
+# deja rastro cuando el hosting no expone logs: un despliegue roto se vería
+# igual que uno que todavía está construyéndose. El proceso vive para poder
+# explicar qué pasó; la garantía de no servir contra un esquema equivocado la
+# mantiene la API rechazando todo lo que no sea diagnóstico.
+fallar_degradado() {
+  echo "$1" | tee "$ERR_FILE" >&2
+  echo "[entrypoint] arrancando en modo degradado: /ready explica el motivo" >&2
+}
+
 # Aprovisionamiento de la base: crea rol, base y PostGIS si hace falta. Solo
 # actúa si DB_BOOTSTRAP_URL está definida (usuario con permiso para crear
 # bases). Necesario cuando la instancia de PostgreSQL es compartida y no está
 # expuesta fuera de la red de Docker.
-if [ -n "${DB_BOOTSTRAP_URL:-}" ]; then
+if [ -n "${DB_BOOTSTRAP_URL:-}" ] && [ ! -f "$ERR_FILE" ]; then
   echo "[entrypoint] aprovisionando base…"
-  python -m app.bootstrap_db
+  if ! salida=$(python -m app.bootstrap_db 2>&1); then
+    fallar_degradado "$(printf '%s' "$salida" | tail -n 3)"
+  else
+    printf '%s\n' "$salida"
+  fi
 fi
 
-echo "[entrypoint] aplicando migraciones…"
-alembic upgrade head
+if [ ! -f "$ERR_FILE" ]; then
+  echo "[entrypoint] aplicando migraciones…"
+  if ! salida=$(alembic upgrade head 2>&1); then
+    fallar_degradado "$(printf '%s' "$salida" | tail -n 3)"
+  else
+    printf '%s\n' "$salida"
+  fi
+fi
 
 # Semillas base (roles, catálogo de necesidades, DIVIPOLA, incidente). Son
 # idempotentes, así que correrlas en cada arranque no duplica nada; se dejan
