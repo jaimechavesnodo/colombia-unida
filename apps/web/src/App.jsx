@@ -51,14 +51,21 @@ const label = (code) => CATALOG_LABELS[code] ?? code
 const titleCase = (s) =>
   (s ?? '').toLowerCase().replace(/(^|\s|-)([a-záéíóúñ])/g, (_, p, c) => p + c.toUpperCase())
 
-/** Imagen responsiva con dimensiones reservadas (CLS < 0.1, regla #3). */
-function Photo({ name, alt, width, height, priority = false, className }) {
+/** Imagen responsiva con dimensiones reservadas (CLS < 0.1, regla #3).
+ *  variant 'card' usa un recorte dedicado (encuadre y luz ya resueltos en
+ *  el archivo, no con object-position sobre una foto panorámica). */
+function Photo({ name, alt, width, height, priority = false, variant = 'wide', className }) {
+  const card = variant === 'card'
   return (
     <img
       className={className}
-      src={`${IMG}/${name}-1600.webp`}
-      srcSet={`${IMG}/${name}-800.webp 800w, ${IMG}/${name}-1600.webp 1600w`}
-      sizes="(max-width: 760px) 100vw, 1180px"
+      src={card ? `${IMG}/${name}-card.webp` : `${IMG}/${name}-1600.webp`}
+      srcSet={
+        card
+          ? undefined
+          : `${IMG}/${name}-800.webp 800w, ${IMG}/${name}-1600.webp 1600w`
+      }
+      sizes={card ? undefined : '(max-width: 760px) 100vw, 1180px'}
       width={width}
       height={height}
       alt={alt}
@@ -283,8 +290,9 @@ function CaseCard({ item, photo }) {
       <div className="case-photo">
         <Photo
           name={photo}
-          width={660}
-          height={256}
+          variant="card"
+          width={720}
+          height={300}
           alt="Comunidad colombiana en labores cotidianas; imagen de contexto, no del caso."
         />
         <p className="case-place sans">{place || 'Ubicación por confirmar'}</p>

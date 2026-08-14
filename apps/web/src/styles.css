@@ -567,9 +567,9 @@ select.chip option {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  /* Encuadre en la franja donde están las personas, no en el cielo */
-  object-position: center 58%;
-  opacity: 0.92;
+  /* El encuadre ya viene resuelto en el archivo -card.webp */
+  object-position: center;
+  opacity: 0.95;
 }
 .case-photo::after {
   content: '';
@@ -812,9 +812,46 @@ select.chip option {
   }
 }
 
+@media (max-width: 760px) {
+  /* El scrim direccional no cubre una columna angosta: pasa a vertical
+     para que el texto nunca caiga sobre la zona clara de la foto. */
+  .hero-frame::after {
+    background: linear-gradient(
+      180deg,
+      rgba(4, 14, 17, 0.55) 0%,
+      rgba(4, 14, 17, 0.82) 42%,
+      rgba(4, 14, 17, 0.95) 100%
+    );
+  }
+  .hero-frame {
+    min-height: 0;
+  }
+  /* Pestañas: una sola línea con desplazamiento lateral propio,
+     en lugar de partir las etiquetas en dos renglones. */
+  .tabs {
+    overflow-x: auto;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+  .tabs::-webkit-scrollbar {
+    display: none;
+  }
+  .tab {
+    white-space: nowrap;
+    font-size: 0.9rem;
+    padding: 0 0.7rem;
+  }
+  .demo-flag {
+    margin-left: 0;
+  }
+}
+
 @media (max-width: 640px) {
   .hero-body {
     padding: var(--space-3) 1.15rem;
+  }
+  .hero-stats {
+    gap: var(--space-2) var(--space-3);
   }
   .bar-row {
     grid-template-columns: 1fr;
