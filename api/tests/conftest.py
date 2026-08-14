@@ -29,19 +29,35 @@ def _db_available(url: str) -> bool:
 
 @pytest.fixture(scope="session")
 def db_url() -> str:
+    """URL de la BD de prueba, recreada desde cero en cada sesión.
+
+    La recreación no es celo: si la base sobrevive entre corridas, Alembic
+    la ve en head y no aplica nada, así que un cambio de esquema hecho
+    editando una migración ya aplicada nunca llega al esquema local. El
+    resultado es una base local vieja y más permisiva que la real, con
+    pruebas que pasan aquí y fallan en CI (que siempre arranca limpia).
+    Ese caso ya se dio con channels.display_name NOT NULL.
+    """
     url = _test_db_url()
+    admin_url = url.rsplit("/", 1)[0] + "/postgres"
+    dbname = url.rsplit("/", 1)[1]
+    try:
+        engine = sa.create_engine(admin_url, isolation_level="AUTOCOMMIT")
+        with engine.connect() as conn:
+            conn.execute(
+                sa.text(
+                    "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+                    "WHERE datname = :d AND pid <> pg_backend_pid()"
+                ),
+                {"d": dbname},
+            )
+            conn.execute(sa.text(f'DROP DATABASE IF EXISTS "{dbname}"'))
+            conn.execute(sa.text(f'CREATE DATABASE "{dbname}"'))
+        engine.dispose()
+    except Exception:
+        pytest.skip("Base de datos de prueba no disponible")
     if not _db_available(url):
-        # Intentar crear la BD de test si el servidor responde
-        admin_url = url.rsplit("/", 1)[0] + "/postgres"
-        dbname = url.rsplit("/", 1)[1]
-        try:
-            engine = sa.create_engine(admin_url, isolation_level="AUTOCOMMIT")
-            with engine.connect() as conn:
-                conn.execute(sa.text(f'CREATE DATABASE "{dbname}"'))
-        except Exception:
-            pytest.skip("Base de datos de prueba no disponible")
-        if not _db_available(url):
-            pytest.skip("Base de datos de prueba no disponible")
+        pytest.skip("Base de datos de prueba no disponible")
     return url
 
 

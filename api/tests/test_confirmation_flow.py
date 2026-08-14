@@ -64,6 +64,7 @@ def _setup_case_with_candidates(s):
         channel = Channel(
             type=ChannelType.WHATSAPP,
             provider=ProviderType.META_CLOUD_API,
+            display_name="canal-confirmaciones-test",
             status=ChannelStatus.TEST,
             config={},
         )
