@@ -1,0 +1,47 @@
+{
+  "object": "whatsapp_business_account",
+  "entry": [
+    {
+      "id": "222333444555666",
+      "changes": [
+        {
+          "value": {
+            "messaging_product": "whatsapp",
+            "metadata": {
+              "display_phone_number": "573000001111",
+              "phone_number_id": "111222333444555"
+            },
+            "contacts": [
+              {
+                "profile": {
+                  "name": "Maria Prueba"
+                },
+                "wa_id": "573000002222"
+              }
+            ],
+            "messages": [
+              {
+                "from": "573000002222",
+                "id": "wamid.HBgMNTczMDAwMDAyMjIyFQIAEhggSU5URVJBQ1RJVkUwMDAxAA==",
+                "timestamp": "1723600240",
+                "type": "interactive",
+                "context": {
+                  "from": "573000001111",
+                  "id": "wamid.HBgMNTczMDAwMDAyMjIyFQIAERgSOTdFRjA0QkJCQzAwRDcwRjcA"
+                },
+                "interactive": {
+                  "type": "button_reply",
+                  "button_reply": {
+                    "id": "btn_confirmar_caso",
+                    "title": "Si, confirmo"
+                  }
+                }
+              }
+            ]
+          },
+          "field": "messages"
+        }
+      ]
+    }
+  ]
+}

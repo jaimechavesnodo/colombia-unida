@@ -50,9 +50,9 @@ Ver [`.env.example`](.env.example). Nunca commitear valores reales.
 
 | Milestone | Estado |
 |---|---|
-| M0 Fundación (repo, skeleton, CI, EasyPanel) | 🔨 en curso |
-| M1 Núcleo de datos (migraciones, seeds, cifrado) | pendiente |
-| M2 WhatsApp ingress + conversación | pendiente |
+| M0 Fundación (repo, skeleton, CI, EasyPanel) | ✅ |
+| M1 Núcleo de datos (migraciones, seeds, cifrado) | ✅ |
+| M2 WhatsApp ingress + conversación | ✅ (sandbox; WABA productiva pendiente de Jaime) |
 | M3 Media + IA + confirmación | pendiente |
 | M4 Casos, necesidades y validación | pendiente |
 | M5 Ofertas, matching y asignación | pendiente |

@@ -93,13 +93,18 @@ def process_batch(session_factory, batch_size: int = 50) -> int:
     try:
         events = _claim_batch(session, batch_size)
         for event in events:
+            # Savepoint por evento: si el handler falla, sus cambios
+            # parciales se revierten y solo persiste la marca de RETRY/DLQ.
+            savepoint = session.begin_nested()
             try:
                 for handler in HANDLERS.get(event.event_type, []):
                     handler(session, event)
+                savepoint.commit()
                 event.publish_status = OutboxStatus.PUBLISHED
                 event.published_at = utcnow()
                 event.last_error_redacted = None
             except Exception as exc:  # noqa: BLE001 — el worker no debe morir por un evento
+                savepoint.rollback()
                 event.retry_count = (event.retry_count or 0) + 1
                 if event.retry_count >= MAX_RETRIES:
                     event.publish_status = OutboxStatus.DEAD_LETTER

@@ -43,9 +43,10 @@ def create_app() -> FastAPI:
         log_ctx(logger, logging.INFO if db_ok else logging.WARNING, "readiness", db=db_ok)
         return {"status": status, "db": db_ok}
 
-    # Los routers de los bounded contexts se registran aquí a medida que
-    # se implementan los milestones (intake, cases, supply, fulfillment,
-    # trust, public_impact).
+    # Routers de los bounded contexts
+    from app.modules.intake.webhook_router import router as webhook_router
+
+    app.include_router(webhook_router)
 
     return app
 

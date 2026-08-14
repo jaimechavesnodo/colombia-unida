@@ -1,0 +1,42 @@
+{
+  "object": "whatsapp_business_account",
+  "entry": [
+    {
+      "id": "222333444555666",
+      "changes": [
+        {
+          "value": {
+            "messaging_product": "whatsapp",
+            "metadata": {
+              "display_phone_number": "573000001111",
+              "phone_number_id": "111222333444555"
+            },
+            "contacts": [
+              {
+                "profile": {
+                  "name": "Maria Prueba"
+                },
+                "wa_id": "573000002222"
+              }
+            ],
+            "messages": [
+              {
+                "from": "573000002222",
+                "id": "wamid.HBgMNTczMDAwMDAyMjIyFQIAEhggSU1BR0UwMDAxAA==",
+                "timestamp": "1723600120",
+                "type": "image",
+                "image": {
+                  "id": "1234567890image",
+                  "mime_type": "image/jpeg",
+                  "sha256": "b1b2c3d4e5f60000000000000000000000000000000000000000000000000000",
+                  "caption": "Foto del puente caido"
+                }
+              }
+            ]
+          },
+          "field": "messages"
+        }
+      ]
+    }
+  ]
+}

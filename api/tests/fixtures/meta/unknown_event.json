@@ -1,0 +1,19 @@
+{
+  "object": "whatsapp_business_account",
+  "entry": [
+    {
+      "id": "222333444555666",
+      "changes": [
+        {
+          "value": {
+            "event": "APPROVED",
+            "message_template_id": 987654321012345,
+            "message_template_name": "confirmacion_caso",
+            "message_template_language": "es_CO"
+          },
+          "field": "message_template_status_update"
+        }
+      ]
+    }
+  ]
+}

@@ -30,9 +30,12 @@ def _stop(signum, frame):  # noqa: ARG001
 def _register_handlers() -> None:
     """Importa los módulos que registran handlers de eventos.
 
-    Se amplía por milestone (conversación, IA, matching, analytics,
-    retención, anclas de auditoría).
+    Se amplía por milestone (IA, matching, analytics, retención,
+    anclas de auditoría).
     """
+    from app.modules.intake import service as intake_service
+
+    intake_service.register()
 
 
 def main() -> None:
