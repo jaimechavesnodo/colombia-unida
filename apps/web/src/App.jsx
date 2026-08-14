@@ -1,6 +1,23 @@
 import { useEffect, useMemo, useState } from 'react'
 import { fetchFeed, fetchImpact } from './api.js'
+import {
+  IconArrow,
+  IconCheck,
+  IconClock,
+  IconDelivered,
+  IconDot,
+  IconEyeOff,
+  IconHeart,
+  IconInbox,
+  IconShield,
+  IconVerified,
+} from './icons.jsx'
 import './styles.css'
+
+const IMG = `${import.meta.env.BASE_URL}img`
+
+// Fotografía de contexto: ambiente, no identificación de personas reales.
+const PHOTOS = ['cosecha', 'comunidad', 'manos', 'territorio']
 
 const CATALOG_LABELS = {
   'SHELTER.MATTRESS': 'Colchones',
@@ -9,37 +26,66 @@ const CATALOG_LABELS = {
   'SHELTER.KIT': 'Kit de alojamiento',
   'FOOD.RATION': 'Mercados',
   'FOOD.INFANT': 'Alimentación infantil',
+  'FOOD.HOT_MEAL': 'Comida caliente',
   'WATER.BOTTLED': 'Agua potable',
   'WATER.TANK': 'Tanques de agua',
   'HYGIENE.KIT': 'Kits de aseo',
   'HYGIENE.DIAPERS': 'Pañales',
+  'HYGIENE.FEMININE': 'Higiene menstrual',
   'HOUSING.TARP': 'Plástico / lona',
   'HOUSING.ROOF.REPAIR': 'Reparación de techo',
+  'HOUSING.WALL.REPAIR': 'Reparación de muros',
   'HOUSING.MATERIALS': 'Materiales',
   'HEALTH.MEDICATION': 'Medicamentos',
   'HEALTH.FIRST_AID': 'Primeros auxilios',
   'CLOTHING.ADULT': 'Ropa adulto',
   'CLOTHING.CHILD': 'Ropa infantil',
+  'EDUCATION.KIT': 'Kits escolares',
   'SERVICES.DEBRIS': 'Remoción de escombros',
+  'SERVICES.ENGINEERING': 'Evaluación estructural',
   'TRANSPORT.CARGO': 'Transporte de carga',
+  'PSYCHOSOCIAL.SUPPORT': 'Apoyo psicosocial',
 }
 
 const label = (code) => CATALOG_LABELS[code] ?? code
 const titleCase = (s) =>
   (s ?? '').toLowerCase().replace(/(^|\s|-)([a-záéíóúñ])/g, (_, p, c) => p + c.toUpperCase())
 
-function Kpi({ label: text, value, note }) {
+/** Imagen responsiva con dimensiones reservadas (CLS < 0.1, regla #3). */
+function Photo({ name, alt, width, height, priority = false, className }) {
   return (
-    <div className="kpi">
-      <p className="kpi-label sans">{text}</p>
-      <p className="kpi-value">{value}</p>
+    <img
+      className={className}
+      src={`${IMG}/${name}-1600.webp`}
+      srcSet={`${IMG}/${name}-800.webp 800w, ${IMG}/${name}-1600.webp 1600w`}
+      sizes="(max-width: 760px) 100vw, 1180px"
+      width={width}
+      height={height}
+      alt={alt}
+      loading={priority ? 'eager' : 'lazy'}
+      decoding="async"
+      fetchPriority={priority ? 'high' : 'auto'}
+    />
+  )
+}
+
+function Kpi({ icon: Icon, tint, label: text, value, note, isDate = false }) {
+  return (
+    <div className="kpi glass">
+      <div className="kpi-head">
+        <span className="kpi-icon" style={{ color: tint }}>
+          <Icon />
+        </span>
+        <p className="kpi-label sans">{text}</p>
+      </div>
+      <p className={`kpi-value${isDate ? ' is-date' : ''}`}>{value}</p>
       {note && <p className="kpi-note sans">{note}</p>}
     </div>
   )
 }
 
 function Bars({ rows, accent = false }) {
-  const max = Math.max(1, ...rows.map((r) => r.value))
+  const max = Math.max(1, ...rows.filter((r) => !r.suppressed).map((r) => r.value))
   return (
     <div>
       {rows.map((r) => (
@@ -47,13 +93,18 @@ function Bars({ rows, accent = false }) {
           <span className="bar-label sans">{r.label}</span>
           {r.suppressed ? (
             <span className="suppressed sans">
+              <IconEyeOff />
               dato suprimido — menos casos que el umbral de privacidad
             </span>
           ) : (
-            <div className="bar-track">
+            <div
+              className="bar-track"
+              role="img"
+              aria-label={`${r.label}: ${r.display ?? r.value}`}
+            >
               <div
                 className={`bar-fill${accent ? ' accent' : ''}`}
-                style={{ width: `${Math.round((r.value / max) * 100)}%` }}
+                style={{ width: `${Math.max(3, Math.round((r.value / max) * 100))}%` }}
               />
             </div>
           )}
@@ -71,11 +122,12 @@ function Dashboard({ impact }) {
   const verified = val('cases_verified')
   const served = val('cases_served')
 
-  const horizons = [
-    ['emergency', 'Emergencia (horas/días)'],
-    ['recovery', 'Recuperación (semanas/meses)'],
-    ['reconstruction', 'Reconstrucción (meses/años)'],
-  ]
+  const horizonNames = {
+    emergency: 'Emergencia (horas/días)',
+    recovery: 'Recuperación (semanas/meses)',
+    reconstruction: 'Reconstrucción (meses/años)',
+  }
+  const horizons = Object.entries(horizonNames)
     .filter(([k]) => m[`needs_count_${k}`])
     .map(([k, name]) => ({
       key: k,
@@ -107,37 +159,54 @@ function Dashboard({ impact }) {
       suppressed: x.suppressed,
     }))
 
-  const asOf = impact.as_of
-    ? new Date(impact.as_of).toLocaleString('es-CO', {
-        dateStyle: 'medium',
-        timeStyle: 'short',
-      })
+  const asOf = impact.as_of ? new Date(impact.as_of) : null
+  const asOfDate = asOf
+    ? asOf.toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' })
     : '—'
+  const asOfTime = asOf
+    ? asOf.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })
+    : ''
 
   return (
     <>
       <div className="notice sans">
-        Cifras derivadas de datos verificados y agregados. Las celdas con menos de{' '}
-        {impact.privacy_threshold ?? 5} casos se suprimen para no permitir reidentificar a
-        hogares en zonas poco pobladas.
+        <IconShield />
+        <span>
+          Cifras derivadas de datos verificados y agregados. Las celdas con menos de{' '}
+          {impact.privacy_threshold ?? 5} casos se suprimen para que no sea posible
+          reidentificar hogares en zonas poco pobladas.
+        </span>
       </div>
 
       <div className="kpi-grid">
-        <Kpi label="Casos recibidos" value={received} note="Por WhatsApp y otros canales" />
         <Kpi
+          icon={IconInbox}
+          tint="var(--sky)"
+          label="Casos recibidos"
+          value={received}
+          note="Registrados por WhatsApp y otros canales"
+        />
+        <Kpi
+          icon={IconVerified}
+          tint="var(--emerald)"
           label="Casos verificados"
           value={verified}
-          note={received ? `${Math.round((verified / received) * 100)}% del total` : '—'}
+          note={received ? `${Math.round((verified / received) * 100)}% del total recibido` : '—'}
         />
         <Kpi
-          label="Casos con ayuda entregada"
+          icon={IconDelivered}
+          tint="var(--amber)"
+          label="Con ayuda entregada"
           value={served}
-          note="Con entrega confirmada por un validador"
+          note="Entrega confirmada por un validador"
         />
         <Kpi
+          icon={IconClock}
+          tint="var(--ink-soft)"
           label="Corte de la información"
-          value={asOf.split(',')[0]}
-          note={`Actualizado ${asOf.split(', ')[1] ?? ''}`}
+          isDate
+          value={asOfDate}
+          note={asOfTime ? `Actualizado a las ${asOfTime}` : ''}
         />
       </div>
 
@@ -145,9 +214,10 @@ function Dashboard({ impact }) {
         <>
           <h2 className="section-title">Necesidades por horizonte</h2>
           <p className="section-sub sans">
-            Cada necesidad se gestiona por separado, con su propia cantidad y estado.
+            Cada necesidad se gestiona por separado, con su propia cantidad y estado: la
+            emergencia se mide en horas, la reconstrucción en meses.
           </p>
-          <div className="panel">
+          <div className="panel glass">
             <Bars rows={horizons} />
           </div>
 
@@ -155,7 +225,7 @@ function Dashboard({ impact }) {
           <p className="section-sub sans">
             Cantidad ya cubierta sobre la cantidad confirmada por el equipo de validación.
           </p>
-          <div className="panel">
+          <div className="panel glass">
             <Bars rows={coverage} accent />
           </div>
         </>
@@ -164,8 +234,10 @@ function Dashboard({ impact }) {
       {categories.length > 0 && (
         <>
           <h2 className="section-title">Qué se está necesitando más</h2>
-          <p className="section-sub sans">Necesidades registradas por categoría del catálogo.</p>
-          <div className="panel">
+          <p className="section-sub sans">
+            Necesidades registradas por categoría del catálogo humanitario.
+          </p>
+          <div className="panel glass">
             <Bars rows={categories} />
           </div>
         </>
@@ -175,17 +247,17 @@ function Dashboard({ impact }) {
         <>
           <h2 className="section-title">Casos por municipio</h2>
           <p className="section-sub sans">
-            Solo se muestra municipio y departamento; nunca la ubicación exacta de un hogar.
+            Solo municipio y departamento; nunca la ubicación exacta de un hogar.
           </p>
-          <div className="panel">
+          <div className="panel glass">
             <Bars rows={municipalities} accent />
           </div>
         </>
       )}
 
       <h2 className="section-title">Cómo leer estas cifras</h2>
-      <div className="panel">
-        <dl className="defs sans">
+      <div className="panel glass">
+        <dl className="defs">
           {Object.entries(impact.definitions ?? {}).map(([k, v]) => (
             <div key={k}>
               <dt>{k}</dt>
@@ -198,52 +270,77 @@ function Dashboard({ impact }) {
   )
 }
 
-function CaseCard({ item }) {
+function CaseCard({ item, photo }) {
   const pct = Math.round(item.progress_percent ?? 0)
+  const complete = pct >= 100
   const place = [item.location?.admin2, item.location?.admin1]
     .filter(Boolean)
     .map(titleCase)
     .join(' · ')
+
   return (
-    <article className="case-card">
-      <p className="case-place sans">{place || 'Ubicación por confirmar'}</p>
-      <h3 className="case-title">{item.title}</h3>
-      <p className="case-summary">{item.summary}</p>
-
-      {item.updates?.length > 0 && (
-        <ul className="updates sans">
-          {item.updates.slice(0, 2).map((u, i) => (
-            <li className="update" key={i}>
-              <span className="update-dot" />
-              <span>
-                <strong>{u.title}</strong>
-                {u.body ? ` — ${u.body}` : ''}
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
-
-      <div>
-        <div className="meta-row sans">
-          <span>
-            {item.household_size_band
-              ? `Hogar de ${item.household_size_band} personas`
-              : 'Tamaño de hogar por confirmar'}
-          </span>
-          <span>{pct}% cubierto</span>
-        </div>
-        <div className="progress-track" style={{ marginTop: '0.35rem' }}>
-          <div
-            className={`progress-fill${pct < 34 ? ' low' : ''}`}
-            style={{ width: `${Math.max(pct, 2)}%` }}
-          />
-        </div>
+    <article className="case-card glass">
+      <div className="case-photo">
+        <Photo
+          name={photo}
+          width={660}
+          height={256}
+          alt="Comunidad colombiana en labores cotidianas; imagen de contexto, no del caso."
+        />
+        <p className="case-place sans">{place || 'Ubicación por confirmar'}</p>
       </div>
 
-      <button className={`btn${pct >= 100 ? ' secondary' : ''}`} type="button">
-        {pct >= 100 ? 'Ver el avance de este caso' : 'Ayudar a este caso'}
-      </button>
+      <div className="case-body">
+        <h3 className="case-title">{item.title}</h3>
+        <p className="case-summary">{item.summary}</p>
+
+        {item.updates?.length > 0 && (
+          <ul className="updates sans">
+            {item.updates.slice(0, 2).map((u, i) => (
+              <li className={`update${u.type === 'NEED' ? ' pending' : ''}`} key={i}>
+                {u.type === 'DELIVERY' ? <IconCheck /> : <IconDot />}
+                <span>
+                  <strong>{u.title}</strong>
+                  {u.body ? ` — ${u.body}` : ''}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        <div>
+          <div className="meta-row sans">
+            <span>
+              {item.household_size_band
+                ? `Hogar de ${item.household_size_band} personas`
+                : 'Tamaño de hogar por confirmar'}
+            </span>
+            <span>{pct}% cubierto</span>
+          </div>
+          <div
+            className="progress-track"
+            role="img"
+            aria-label={`Cobertura de la necesidad: ${pct} por ciento`}
+          >
+            <div
+              className={`progress-fill${pct < 34 ? ' low' : ''}`}
+              style={{ width: `${Math.max(pct, 3)}%` }}
+            />
+          </div>
+        </div>
+
+        <button className={`btn${complete ? ' secondary' : ''}`} type="button">
+          {complete ? (
+            <>
+              Ver el avance <IconArrow />
+            </>
+          ) : (
+            <>
+              <IconHeart /> Ayudar a este caso
+            </>
+          )}
+        </button>
+      </div>
     </article>
   )
 }
@@ -252,8 +349,12 @@ function Feed({ items, order, setOrder, admin1, setAdmin1, departments }) {
   return (
     <>
       <div className="notice sans">
-        Cada caso se publica solo con el consentimiento de la familia y tras revisión del
-        equipo. No mostramos nombres, teléfonos, documentos ni la dirección exacta.
+        <IconShield />
+        <span>
+          Cada caso se publica solo con el consentimiento de la familia y tras revisión del
+          equipo. No mostramos nombres, teléfonos, documentos ni la dirección exacta. Las
+          fotografías son de contexto y no corresponden a los hogares publicados.
+        </span>
       </div>
 
       <div className="filters">
@@ -286,7 +387,7 @@ function Feed({ items, order, setOrder, admin1, setAdmin1, departments }) {
             </option>
           ))}
         </select>
-        <span className="sans" style={{ fontSize: '0.85rem', color: 'var(--ink-faint)' }}>
+        <span className="filter-count sans">
           {items.length} caso{items.length === 1 ? '' : 's'} publicado
           {items.length === 1 ? '' : 's'}
         </span>
@@ -296,8 +397,8 @@ function Feed({ items, order, setOrder, admin1, setAdmin1, departments }) {
         <p className="state sans">No hay casos publicados con estos filtros.</p>
       ) : (
         <div className="cards">
-          {items.map((item) => (
-            <CaseCard item={item} key={item.slug} />
+          {items.map((item, i) => (
+            <CaseCard item={item} photo={PHOTOS[i % PHOTOS.length]} key={item.slug} />
           ))}
         </div>
       )}
@@ -324,14 +425,22 @@ export default function App() {
   }, [order, admin1])
 
   const departments = useMemo(() => {
-    const set = new Set()
-    for (const m of impact?.by_municipality ?? []) set.add(m.municipality)
-    for (const i of feed?.items ?? []) if (i.location?.admin1) set.add(i.location.admin1)
-    return [...set].filter((d) => (feed?.items ?? []).some((i) => i.location?.admin1 === d)).sort()
-  }, [impact, feed])
+    const present = new Set(
+      (feed?.items ?? []).map((i) => i.location?.admin1).filter(Boolean),
+    )
+    return [...present].sort()
+  }, [feed])
+
+  const m = impact?.metrics ?? {}
+  const heroPhoto = tab === 'feed' ? 'cosecha' : 'comunidad'
 
   return (
     <>
+      <div className="backdrop" aria-hidden="true">
+        <Photo name="territorio" width={1600} height={900} alt="" priority />
+      </div>
+      <div className="ambient" aria-hidden="true" />
+
       <header className="masthead">
         <div className="masthead-inner">
           <div>
@@ -344,7 +453,7 @@ export default function App() {
           </div>
           <span className="demo-flag sans">Datos de demostración</span>
         </div>
-        <nav className="tabs" role="tablist">
+        <nav className="tabs" role="tablist" aria-label="Secciones">
           <button
             className="tab sans"
             role="tab"
@@ -366,6 +475,49 @@ export default function App() {
         </nav>
       </header>
 
+      <section className="hero">
+        <div className="hero-frame">
+          <Photo
+            name={heroPhoto}
+            width={1180}
+            height={340}
+            priority
+            alt="Comunidades colombianas trabajando juntas tras el terremoto."
+          />
+          <div className="hero-body">
+            <p className="hero-eyebrow sans">
+              {tab === 'feed' ? 'Necesidad → entrega → evidencia' : 'Transparencia auditable'}
+            </p>
+            <h2 className="hero-title">
+              {tab === 'feed'
+                ? 'Cada ayuda se sigue hasta la puerta de una familia'
+                : 'Todo lo que se recibe y se entrega, a la vista'}
+            </h2>
+            <p className="hero-lede">
+              {tab === 'feed'
+                ? 'Los casos se registran por WhatsApp, un equipo los verifica en territorio y cada entrega queda con responsable y evidencia. Aquí solo se publica lo que la familia autorizó.'
+                : 'Cifras agregadas y reproducibles: cuántos casos entran, cuántos se verifican y cuánta ayuda llega realmente, con la fecha de corte de cada número.'}
+            </p>
+            {impact && (
+              <div className="hero-stats sans">
+                <div className="hero-stat">
+                  <strong>{m.cases_received?.value ?? 0}</strong>
+                  <span>Casos recibidos</span>
+                </div>
+                <div className="hero-stat">
+                  <strong>{m.cases_verified?.value ?? 0}</strong>
+                  <span>Verificados</span>
+                </div>
+                <div className="hero-stat">
+                  <strong>{feed?.items?.length ?? 0}</strong>
+                  <span>Publicados con consentimiento</span>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </section>
+
       <main>
         {error && (
           <p className="state sans">
@@ -373,7 +525,8 @@ export default function App() {
           </p>
         )}
 
-        {!error && tab === 'feed' &&
+        {!error &&
+          tab === 'feed' &&
           (feed ? (
             <Feed
               items={feed.items}
@@ -387,14 +540,19 @@ export default function App() {
             <p className="state sans">Cargando casos…</p>
           ))}
 
-        {!error && tab === 'impact' &&
-          (impact ? <Dashboard impact={impact} /> : <p className="state sans">Cargando cifras…</p>)}
+        {!error &&
+          tab === 'impact' &&
+          (impact ? (
+            <Dashboard impact={impact} />
+          ) : (
+            <p className="state sans">Cargando cifras…</p>
+          ))}
 
         <p className="privacy-note sans">
           Colombia Unida publica únicamente una proyección segura y auditable de la operación.
-          Los datos de identidad, contacto y ubicación exacta de las familias permanecen en el
-          plano protegido y no se exponen en esta página. Cada ayuda entregada queda registrada
-          con evidencia y responsable.
+          La identidad, el contacto y la ubicación exacta de las familias permanecen en el plano
+          protegido y no se exponen en esta página. Cada ayuda entregada queda registrada con
+          responsable, hora y evidencia.
         </p>
       </main>
     </>
