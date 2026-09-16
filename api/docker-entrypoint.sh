@@ -9,9 +9,19 @@
 # lock por transacción, pero dos arranques simultáneos igual son ruido
 # innecesario en los logs.
 #
-# Si la migración falla, el contenedor NO arranca: es preferible un servicio
-# caído y visible a una API sirviendo contra un esquema equivocado.
+# Hay dos clases de fallo al arrancar y se tratan distinto:
+#
+#   - Transitorio (la base todavía no está: DNS que no resuelve tras reiniciar
+#     el host, PostgreSQL arrancando). El contenedor sale con 75 y el
+#     orquestador lo reinicia. Quedarse en modo degradado por esto dejaba la
+#     API caída para siempre aunque la base volviera a los diez segundos.
+#   - Determinista (falta PostGIS, una migración rota). Reintentar no lo
+#     arregla: el proceso vive en modo degradado para poder explicarlo por
+#     /ready, y rechaza todo el tráfico de negocio.
 set -e
+
+# EX_TEMPFAIL: lo devuelve app.bootstrap_db cuando la base no está disponible.
+EXIT_TRANSITORIO=75
 
 # Dónde queda el motivo si el arranque no logra dejar la base lista. La API lo
 # lee y responde 503 con ese texto en /ready, rechazando el tráfico de negocio.
@@ -28,17 +38,20 @@ fallar_degradado() {
   echo "[entrypoint] arrancando en modo degradado: /ready explica el motivo" >&2
 }
 
-# Aprovisionamiento de la base: crea rol, base y PostGIS si hace falta. Solo
-# actúa si DB_BOOTSTRAP_URL está definida (usuario con permiso para crear
-# bases). Necesario cuando la instancia de PostgreSQL es compartida y no está
-# expuesta fuera de la red de Docker.
-if [ -n "${DB_BOOTSTRAP_URL:-}" ] && [ ! -f "$ERR_FILE" ]; then
-  echo "[entrypoint] aprovisionando base…"
-  if ! salida=$(python -m app.bootstrap_db 2>&1); then
-    fallar_degradado "$(printf '%s' "$salida" | tail -n 3)"
-  else
-    printf '%s\n' "$salida"
+# Espera a que la base esté disponible y, si DB_BOOTSTRAP_URL está definida,
+# crea rol, base y extensiones. La espera corre siempre: el worker tampoco
+# puede trabajar sin base, y quién arranca primero no lo decide nadie.
+echo "[entrypoint] esperando la base y aprovisionando…"
+if salida=$(python -m app.bootstrap_db 2>&1); then
+  printf '%s\n' "$salida"
+else
+  codigo=$?
+  printf '%s\n' "$salida" >&2
+  if [ "$codigo" -eq "$EXIT_TRANSITORIO" ]; then
+    echo "[entrypoint] la base no respondió; saliendo para que se reintente" >&2
+    exit "$EXIT_TRANSITORIO"
   fi
+  fallar_degradado "$(printf '%s' "$salida" | tail -n 3)"
 fi
 
 if [ ! -f "$ERR_FILE" ]; then
